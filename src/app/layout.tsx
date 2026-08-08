@@ -127,7 +127,7 @@ export default function RootLayout({
             {/* Chrome, now in React (cat + music bridge to core.ts). Cog sits
                 beside the burger on desktop. */}
             <SettingsMenu />
-          </menusProvider>
+          </MenusProvider>
 
           {/* Routes core.ts's nav clicks through Next's client router so the
               layout (and bg-music audio) never unloads between pages. */}
@@ -143,7 +143,7 @@ export default function RootLayout({
           <SiteChrome catSrc="https://m.doughmination.gay/img/oneko/classic.png" />
 
           <SoundFX />
-        </languageProvider>
+        </LanguageProvider>
       </body>
     </html>
   );
