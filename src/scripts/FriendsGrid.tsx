@@ -1,4 +1,4 @@
-/* personal/src/scripts/FriendsGrid.tsx
+/* personal/src/scripts/friendsGrid.tsx
  * Copyright (c) 2026 Clove Nytrix Doughmination Twilight
  * Licensed under the DASL-1.0 Licence.
  * See LICENCE.md in the project root for full licence information.
@@ -7,8 +7,8 @@
 "use client";
 
 import { useEffect } from "react";
-import PresenceCard from "./PresenceCard";
-import { useLanguage } from "@/i18n/LanguageProvider";
+import PresenceCard from "./presenceCard";
+import { useLanguage } from "@/i18n/languageProvider";
 import type { TranslationKey } from "@/i18n/translate";
 
 /* /cool-people — the friends/alts grid. React renders the section/heading/grid

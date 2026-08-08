@@ -1,4 +1,4 @@
-/* personal/src/styles/visitor-counter.css.ts
+/* personal/src/styles/visitorCounter.css.ts
  * Copyright (c) 2026 Clove Nytrix Doughmination Twilight
  * Licensed under the DASL-1.0 Licence.
  * See LICENCE.md in the project root for full licence information.

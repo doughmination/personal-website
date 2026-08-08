@@ -1,4 +1,4 @@
-/* personal/src/styles/cat-picker.css.ts
+/* personal/src/styles/catPicker.css.ts
  * Copyright (c) 2026 Clove Nytrix Doughmination Twilight
  * Licensed under the DASL-1.0 Licence.
  * See LICENCE.md in the project root for full licence information.
@@ -9,7 +9,7 @@
  *
  * Ported from the live half of public/css/shared/theme-switcher.css. That file
  * was named for a theme switcher that no longer exists: every .beta-* rule in it
- * styled the old vanilla switcher, which SettingsMenu.module.css replaced. Those
+ * styled the old vanilla switcher, which settingsMenu.module.css replaced. Those
  * were dropped rather than ported, along with:
  *
  *   .cat-toast          — core.ts never builds a toast any more

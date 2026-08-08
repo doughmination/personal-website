@@ -5,14 +5,14 @@
  */
 
 import type { Metadata, Viewport } from "next";
-import NavBridge from "./_components/NavBridge";
-import SoundFX from "./SoundFX";
+import NavBridge from "./_components/navBridge";
+import SoundFX from "./soundFX";
 import Providers from "./providers";
-import SettingsMenu from "@components/chrome/SettingsMenu";
-import NavMenu from "@components/chrome/NavMenu";
-import { MenusProvider } from "@components/chrome/MenusProvider";
-import SiteChrome from "@components/chrome/SiteChrome";
-import { LanguageProvider } from "@/i18n/LanguageProvider";
+import SettingsMenu from "@components/chrome/settingsMenu";
+import NavMenu from "@components/chrome/navMenu";
+import { MenusProvider } from "@components/chrome/menusProvider";
+import SiteChrome from "@components/chrome/siteChrome";
+import { LanguageProvider } from "@/i18n/languageProvider";
 // One fixed palette. Importing for side effects emits the :root token block at
 // build time; see src/styles/themes.css.ts.
 import "@styles/themes.css";
@@ -20,13 +20,13 @@ import "@styles/themes.css";
 // Import order here IS the cascade order, so keep it matching main.css.
 import "@styles/fonts.css";
 import "@styles/base.css";
-import "@styles/bg-music.css";
-import "@styles/cat-picker.css";
+import "@styles/bgMusic.css";
+import "@styles/catPicker.css";
 import "@styles/layout.css";
 import "@styles/nav.css";
-import "@styles/visitor-counter.css";
+import "@styles/visitorCounter.css";
 import "@styles/sections.css";
-import "@styles/scroll-wrap.css";
+import "@styles/scrollWrap.css";
 // Last, so its media queries override the base rules above.
 import "@styles/responsive.css";
 
@@ -115,7 +115,7 @@ export default function RootLayout({
         {/* Active language (localStorage-persisted, browser-detected on first
             visit). Wraps everything below, not just Providers' children —
             NavMenu and SettingsMenu need translations too and both render
-            outside Providers. See src/i18n/LanguageProvider.tsx. */}
+            outside Providers. See src/i18n/languageProvider.tsx. */}
         <LanguageProvider>
           {/* The two top-left menus share one open/closed state so only one is
               ever open — opening the cog closes the burger and vice versa. */}
@@ -127,7 +127,7 @@ export default function RootLayout({
             {/* Chrome, now in React (cat + music bridge to core.ts). Cog sits
                 beside the burger on desktop. */}
             <SettingsMenu />
-          </MenusProvider>
+          </menusProvider>
 
           {/* Routes core.ts's nav clicks through Next's client router so the
               layout (and bg-music audio) never unloads between pages. */}
@@ -143,7 +143,7 @@ export default function RootLayout({
           <SiteChrome catSrc="https://m.doughmination.gay/img/oneko/classic.png" />
 
           <SoundFX />
-        </LanguageProvider>
+        </languageProvider>
       </body>
     </html>
   );

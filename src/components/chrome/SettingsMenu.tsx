@@ -1,4 +1,4 @@
-/* personal/src/components/chrome/SettingsMenu.tsx
+/* personal/src/components/chrome/settingsMenu.tsx
  * Copyright (c) 2026 Clove Nytrix Doughmination Twilight
  * Licensed under the DASL-1.0 Licence.
  * See LICENCE.md in the project root for full licence information.
@@ -18,10 +18,10 @@ import {
   VolumeDownFill,
 } from "react-bootstrap-icons";
 import { playClickSound, playOpenSound, playCloseSound, playHoverSound } from "@lib/sound";
-import { useLanguage } from "@/i18n/LanguageProvider";
+import { useLanguage } from "@/i18n/languageProvider";
 import { LANGUAGE_NAMES, SUPPORTED_LANGUAGES } from "@/i18n/config";
-import { useMenus } from "./MenusProvider";
-import styles from "./SettingsMenu.module.css";
+import { useMenus } from "./menusProvider";
+import styles from "./settingsMenu.module.css";
 
 /**
  * The settings cog. On desktop it sits beside the nav hamburger and, when

@@ -1,4 +1,4 @@
-/* personal/src/scripts/Music.tsx
+/* personal/src/scripts/music.tsx
  * Copyright (c) 2026 Clove Nytrix Doughmination Twilight
  * Licensed under the DASL-1.0 Licence.
  * See LICENCE.md in the project root for full licence information.
@@ -11,7 +11,7 @@ import { useUserPresence } from "@doughmination/react-api";
 import { MusicNoteBeamed } from "react-bootstrap-icons";
 import { playClickSound } from "@lib/sound";
 import { dmListening } from "./presenceShared";
-import { useLanguage } from "@/i18n/LanguageProvider";
+import { useLanguage } from "@/i18n/languageProvider";
 import type { Dictionary } from "@/i18n/locales/en";
 
 /* Ported from music.js — now-playing hero, synced lyrics (LRCLIB) with a

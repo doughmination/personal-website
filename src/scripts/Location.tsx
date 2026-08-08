@@ -1,4 +1,4 @@
-/* personal/src/scripts/Location.tsx
+/* personal/src/scripts/location.tsx
 * Copyright (c) 2026 Clove Nytrix Doughmination Twilight
 * Licensed under the DASL-1.0 Licence.
 * See LICENCE.md in the project root for full licence information.
@@ -11,12 +11,12 @@ import dynamic from "next/dynamic";
 import { useDeviceState } from "@doughmination/react-api";
 
 import { realText, relTime } from "./util";
-import { useLanguage } from "@/i18n/LanguageProvider";
+import { useLanguage } from "@/i18n/languageProvider";
 import { BoxArrowUpRight, GeoAltFill } from "react-bootstrap-icons";
 import "leaflet/dist/leaflet.css";
 
 // Leaflet touches `window` at import time — must be client-only, no SSR.
-const CityMap = dynamic(() => import("./CityMap"), { ssr: false });
+const CityMap = dynamic(() => import("./cityMap"), { ssr: false });
 
 /* "A,B,C" -> "A, B, C", dropping empty/null-ish parts. */
 function fmtLocation(raw: string): string {

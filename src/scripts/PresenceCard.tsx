@@ -1,4 +1,4 @@
-/* personal/src/scripts/PresenceCard.tsx
+/* personal/src/scripts/presenceCard.tsx
  * Copyright (c) 2026 Clove Nytrix Doughmination Twilight
  * Licensed under the DASL-1.0 Licence.
  * See LICENCE.md in the project root for full licence information.
@@ -46,7 +46,7 @@ import {
 } from "./presenceShared";
 import { renderDiscordMarkdown } from "./discordMarkdown";
 import { playClickSound } from "@lib/sound";
-import { useLanguage } from "@/i18n/LanguageProvider";
+import { useLanguage } from "@/i18n/languageProvider";
 import type { TranslationKey } from "@/i18n/translate";
 
 /* ---- small shared bits ---------------------------------------------------- */

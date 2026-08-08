@@ -15,7 +15,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useLanguage } from "@/i18n/LanguageProvider";
+import { useLanguage } from "@/i18n/languageProvider";
 import type { TranslationKey } from "@/i18n/translate";
 
 /** Renders a single translated string. Optional `{token}` replacements. */

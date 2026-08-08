@@ -7,11 +7,11 @@
 "use client";
 
 import { Github } from "react-bootstrap-icons";
-import Fronting from "@scripts/Fronting";
-import Devices from "@scripts/Devices";
-import Location from "@scripts/Location";
-import VisitorCounter from "@scripts/VisitorCounter";
-import { useLanguage } from "@/i18n/LanguageProvider";
+import Fronting from "@scripts/fronting";
+import Devices from "@scripts/devices";
+import Location from "@scripts/location";
+import VisitorCounter from "@scripts/visitorCounter";
+import { useLanguage } from "@/i18n/languageProvider";
 import "@styles/pages/index.css";
 
 export default function Home() {

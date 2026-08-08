@@ -1,4 +1,4 @@
-/* personal/src/scripts/MinecraftAccounts.tsx
+/* personal/src/scripts/minecraftAccounts.tsx
  * Copyright (c) 2026 Clove Nytrix Doughmination Twilight
  * Licensed under the DASL-1.0 Licence.
  * See LICENCE.md in the project root for full licence information.
@@ -23,7 +23,7 @@ import {
 } from "react-bootstrap-icons";
 import { createWave } from "./skinAnimations";
 import { playClickSound } from "@lib/sound";
-import { useLanguage } from "@/i18n/LanguageProvider";
+import { useLanguage } from "@/i18n/languageProvider";
 import type { TranslationKey } from "@/i18n/translate";
 
 /* Ported from minecraft.js — account cards + a detail modal (Overview / 3D

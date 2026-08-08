@@ -5,9 +5,9 @@
  */
 
 import type { Metadata } from "next";
-import PresenceDashboard from "@scripts/PresenceDashboard";
+import PresenceDashboard from "@scripts/presenceDashboard";
 import { Tr } from "@components/chrome/i18nText";
-import * as s from "@styles/presence-dashboard.css";
+import * as s from "@styles/presenceDashboard.css";
 
 const MY_DISCORD_USER_ID = "1464890289922641993";
 

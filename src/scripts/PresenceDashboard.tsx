@@ -1,4 +1,4 @@
-/* personal/src/scripts/PresenceDashboard.tsx
+/* personal/src/scripts/presenceDashboard.tsx
  * Copyright (c) 2026 Clove Nytrix Doughmination Twilight
  * Licensed under the DASL-1.0 Licence.
  * See LICENCE.md in the project root for full licence information.
@@ -20,10 +20,10 @@ import {
 } from "./presenceShared";
 import { playClickSound } from "@lib/sound";
 import { renderDiscordMarkdown } from "./discordMarkdown";
-import { useLanguage } from "@/i18n/LanguageProvider";
+import { useLanguage } from "@/i18n/languageProvider";
 import { localizedPath } from "@/i18n/config";
 import type { TranslationKey } from "@/i18n/translate";
-import * as s from "@styles/presence-dashboard.css";
+import * as s from "@styles/presenceDashboard.css";
 
 /** Status → the theme token used for its dot and label. */
 const STATUS_VAR: Record<string, string> = {

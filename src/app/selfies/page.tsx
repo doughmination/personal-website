@@ -5,7 +5,7 @@
  */
 
 import type { Metadata } from "next";
-import SelfiesGallery from "@scripts/SelfiesGallery";
+import SelfiesGallery from "@scripts/selfiesGallery";
 import { Tr } from "@components/chrome/i18nText";
 import "@styles/pages/selfies.css";
 

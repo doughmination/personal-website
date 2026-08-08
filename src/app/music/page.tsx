@@ -5,7 +5,7 @@
  */
 
 import type { Metadata } from "next";
-import Music from "@scripts/Music";
+import Music from "@scripts/music";
 import "@styles/pages/music.css";
 
 export const metadata: Metadata = {

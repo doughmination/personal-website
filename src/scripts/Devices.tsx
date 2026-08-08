@@ -1,4 +1,4 @@
-/* personal/src/scripts/Devices.tsx
+/* personal/src/scripts/devices.tsx
  * Copyright (c) 2026 Clove Nytrix Doughmination Twilight
  * Licensed under the DASL-1.0 Licence.
  * See LICENCE.md in the project root for full licence information.
@@ -10,7 +10,7 @@ import { useDevices } from "@doughmination/react-api";
 import type { DeviceRecord } from "@doughmination/react-api";
 
 import { realText, relTime, type RelTimeStrings } from "./util";
-import { useLanguage } from "@/i18n/LanguageProvider";
+import { useLanguage } from "@/i18n/languageProvider";
 import type { TranslationKey } from "@/i18n/translate";
 import {
   BatteryHalf,

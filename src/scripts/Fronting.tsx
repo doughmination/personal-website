@@ -1,4 +1,4 @@
-/* personal/src/scripts/Fronting.tsx
+/* personal/src/scripts/fronting.tsx
  * Copyright (c) 2026 Clove Nytrix Doughmination Twilight
  * Licensed under the DASL-1.0 Licence.
  * See LICENCE.md in the project root for full licence information.
@@ -8,7 +8,7 @@
 
 import type { CSSProperties } from "react";
 import { useFronters } from "@doughmination/react-api";
-import { useLanguage } from "@/i18n/LanguageProvider";
+import { useLanguage } from "@/i18n/languageProvider";
 
 // member.color is a 6-char hex with no leading #, and may be null.
 function colorHex(color?: string | null): string | undefined {

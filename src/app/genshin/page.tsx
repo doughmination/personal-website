@@ -5,7 +5,7 @@
  */
 
 import type { Metadata } from "next";
-import GenshinGallery, { type Character } from "@scripts/GenshinGallery";
+import GenshinGallery, { type Character } from "@scripts/genshinGallery";
 import { Tr } from "@components/chrome/i18nText";
 import "@styles/pages/genshin.css";
 

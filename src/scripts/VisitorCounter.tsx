@@ -1,4 +1,4 @@
-/* personal/src/scripts/VisitorCounter.tsx
+/* personal/src/scripts/visitorCounter.tsx
  * Copyright (c) 2026 Clove Nytrix Doughmination Twilight
  * Licensed under the DASL-1.0 Licence.
  * See LICENCE.md in the project root for full licence information.
@@ -7,7 +7,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useLanguage } from "@/i18n/LanguageProvider";
+import { useLanguage } from "@/i18n/languageProvider";
 
 /* Ported from visitor-counter.js — a pixel-digit hit counter (via Abacus).
    Caches per tab-session so a refresh doesn't re-increment the count. */

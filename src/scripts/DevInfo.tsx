@@ -1,4 +1,4 @@
-/* personal/src/scripts/DevInfo.tsx
+/* personal/src/scripts/devInfo.tsx
  * Copyright (c) 2026 Clove Nytrix Doughmination Twilight
  * Licensed under the DASL-1.0 Licence.
  * See LICENCE.md in the project root for full licence information.
@@ -9,7 +9,7 @@
 import { useEffect, useState } from "react";
 import type { CSSProperties } from "react";
 import { playClickSound } from "@lib/sound";
-import { useLanguage } from "@/i18n/LanguageProvider";
+import { useLanguage } from "@/i18n/languageProvider";
 import type { Dictionary } from "@/i18n/locales/en";
 
 /** Duration unit words for fmt(), pulled from the active locale. */

@@ -1,4 +1,4 @@
-/* personal/src/scripts/SelfiesGallery.tsx
+/* personal/src/scripts/selfiesGallery.tsx
  * Copyright (c) 2026 Clove Nytrix Doughmination Twilight
  * Licensed under the DASL-1.0 Licence.
  * See LICENCE.md in the project root for full licence information.
@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CameraFill } from "react-bootstrap-icons";
 import { playClickSound } from "@lib/sound";
-import { useLanguage } from "@/i18n/LanguageProvider";
+import { useLanguage } from "@/i18n/languageProvider";
 
 /* Ported from selfies.js — grid + lightbox from /selfies/selfies.json.
    Manifest is an array of filename strings or { src, alt, caption } objects. */

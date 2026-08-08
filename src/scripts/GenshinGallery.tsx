@@ -1,4 +1,4 @@
-/* personal/src/scripts/GenshinGallery.tsx
+/* personal/src/scripts/genshinGallery.tsx
  * Copyright (c) 2026 Clove Nytrix Doughmination Twilight
  * Licensed under the DASL-1.0 Licence.
  * See LICENCE.md in the project root for full licence information.
@@ -7,8 +7,8 @@
 "use client";
 
 import { useGenshinRoster } from "@doughmination/react-api";
-import Model3D from "@components/chrome/Model3D";
-import { useLanguage } from "@/i18n/LanguageProvider";
+import Model3D from "@components/chrome/model3D";
+import { useLanguage } from "@/i18n/languageProvider";
 
 export type Character = {
   name: string;

@@ -5,7 +5,7 @@
  */
 
 import type { Metadata } from "next";
-import Guestbook from "@scripts/Guestbook";
+import Guestbook from "@scripts/guestbook";
 import { Tr } from "@components/chrome/i18nText";
 import "@styles/pages/guestbook.css";
 

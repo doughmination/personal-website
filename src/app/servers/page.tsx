@@ -5,7 +5,7 @@
  */
 
 import type { Metadata } from "next";
-import ServersGuilds from "@scripts/ServersGuilds";
+import ServersGuilds from "@scripts/serversGuilds";
 import { Tr } from "@components/chrome/i18nText";
 // Shared card styles first, page overrides second — that's the cascade order.
 import "@styles/stage.css";

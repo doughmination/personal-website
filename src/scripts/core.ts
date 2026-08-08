@@ -174,7 +174,7 @@ export function initCore(catSrc: string = "https://m.doughmination.gay/img/oneko
 
   document.querySelectorAll("[data-href]").forEach(wireDataHref);
 
-  /* The nav is now a React component (src/components/chrome/NavMenu.tsx) built
+  /* The nav is now a React component (src/components/chrome/navMenu.tsx) built
    * from the TS nav list (navItems.tsx) with react-bootstrap-icons. It owns its
    * own selected state via usePathname, so the old buildNav()/ctpBuildNav()
    * imperative builder was removed. */

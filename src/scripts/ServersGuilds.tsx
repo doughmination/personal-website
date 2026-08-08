@@ -1,4 +1,4 @@
-/* personal/src/scripts/ServersGuilds.tsx
+/* personal/src/scripts/serversGuilds.tsx
  * Copyright (c) 2026 Clove Nytrix Doughmination Twilight
  * Licensed under the DASL-1.0 Licence.
  * See LICENCE.md in the project root for full licence information.
@@ -7,7 +7,7 @@
 "use client";
 
 import { useGuild } from "@doughmination/react-api";
-import { useLanguage } from "@/i18n/LanguageProvider";
+import { useLanguage } from "@/i18n/languageProvider";
 import type { TranslationKey } from "@/i18n/translate";
 
 /* Ported from guilds.js — Discord server cards, each resolved live via the

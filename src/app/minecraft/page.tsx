@@ -5,7 +5,7 @@
  */
 
 import type { Metadata } from "next";
-import MinecraftAccounts from "@scripts/MinecraftAccounts";
+import MinecraftAccounts from "@scripts/minecraftAccounts";
 import { Tr } from "@components/chrome/i18nText";
 import "@styles/stage.css";
 import "@styles/pages/minecraft.css";

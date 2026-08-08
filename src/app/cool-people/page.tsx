@@ -5,10 +5,10 @@
  */
 
 import type { Metadata } from "next";
-import FriendsGrid from "@scripts/FriendsGrid";
+import FriendsGrid from "@scripts/friendsGrid";
 import { Tr, TrLink } from "@components/chrome/i18nText";
-import "@styles/presence-card.css";
-import "@styles/pages/cool-people.css";
+import "@styles/presenceCard.css";
+import "@styles/pages/coolPeople.css";
 
 export const metadata: Metadata = {
   title: "Clove Nytrix Doughmination Twilight",
