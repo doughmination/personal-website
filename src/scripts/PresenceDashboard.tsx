@@ -1,0 +1,655 @@
+/* personal/src/scripts/PresenceDashboard.tsx
+ * Copyright (c) 2026 Clove Nytrix Doughmination Twilight
+ * Licensed under the DASL-1.0 Licence.
+ * See LICENCE.md in the project root for full licence information.
+ */
+
+"use client";
+import Link from "next/link";
+import { useId, useMemo, useState } from "react";
+import {
+  ChevronRight, Clock as ClockIcon, Gem, Globe, PatchCheckFill, Spotify,
+} from "react-bootstrap-icons";
+import {
+  BADGE_FLAGS, CONNECTION_ICON, CONNECTION_URLS, NAME_FONTS, PLATFORM_ICONS,
+  assetUrl, avatarUrl, bannerUrl, clamp, elapsedStr,
+  emojiUrl, fmt, fmtPrice, fmtSinceDate, guildBadgeUrl, intToHex, isRealName,
+  isStatusKey, isWlTypeKey, mapSelfHostToPresence, pickListening, proxyImg, useAlbumAccent, usePresenceFeed,
+  useReducedMotion, useTicker, wlImg, collectibleForSlot,
+  type Collectible, type Dict, type SelfJson,
+} from "./presenceShared";
+import { playClickSound } from "@lib/sound";
+import { renderDiscordMarkdown } from "./discordMarkdown";
+import { useLanguage } from "@/i18n/LanguageProvider";
+import { localizedPath } from "@/i18n/config";
+import type { TranslationKey } from "@/i18n/translate";
+import * as s from "@styles/presence-dashboard.css";
+
+/** Status → the theme token used for its dot and label. */
+const STATUS_VAR: Record<string, string> = {
+  online: "var(--success)",
+  idle: "var(--warning)",
+  dnd: "var(--danger)",
+  offline: "var(--text-faint)",
+  streaming: "var(--accent-alt)",
+};
+
+/** <img> that removes itself on error (replaces the old onerror="this.remove()"). */
+function SafeImg(props: React.ImgHTMLAttributes<HTMLImageElement>) {
+  const src = typeof props.src === "string" ? props.src : null;
+  const [failed, setFailed] = useState<string | null>(null);
+  if (failed != null && failed === src) return null;
+  // eslint-disable-next-line jsx-a11y/alt-text, @next/next/no-img-element
+  return <img {...props} onError={() => setFailed(src)} />;
+}
+
+/**
+ * A panel whose heading toggles its body. Used for Connections and Wishlist,
+ * which can both run long.
+ *
+ * Starts collapsed once the list passes `collapseAbove`, so a big list doesn't
+ * dominate the grid on load, but a short one stays visible with no interaction.
+ * The count sits in the heading so it reads as useful while closed. Open state
+ * is React state rather than <details open>, because a socket presence push
+ * re-renders this whole tree and would fight an uncontrolled element.
+ */
+function CollapsiblePanel({
+  title, count, collapseAbove = 8, wide = false, children,
+}: {
+  title: string;
+  count: number;
+  collapseAbove?: number;
+  wide?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(count <= collapseAbove);
+  const bodyId = useId();
+  return (
+    <section className={wide ? s.panelWide : s.panel}>
+      <button
+        type="button"
+        className={`${s.panelToggle}${open ? "" : " " + s.panelToggleClosed}`}
+        aria-expanded={open}
+        aria-controls={bodyId}
+        onClick={() => {
+          playClickSound();
+          setOpen((v) => !v);
+        }}
+      >
+        <span>{title}</span>
+        <span className={s.panelCount}>{count}</span>
+        <ChevronRight
+          className={`${s.chevron}${open ? " " + s.chevronOpen : ""}`}
+          aria-hidden="true"
+        />
+      </button>
+      <div id={bodyId} hidden={!open}>
+        {/* Long lists scroll inside the panel instead of stretching the page. */}
+        <div className={count > collapseAbove ? s.scrollArea : undefined}>{children}</div>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * The equipped nameplate, as the backdrop behind the username — which is how
+ * Discord itself uses it ("Make your name stand out"). Prefers the .webm since
+ * these are animated, falls back to the static PNG when the user asks for
+ * reduced motion or no video is offered.
+ */
+function Nameplate({ np }: { np: Collectible }) {
+  const reduced = useReducedMotion();
+  const still = np.static_image_url || np.animated_image_url || null;
+  const useVideo = !reduced && !!np.video_url;
+  if (!useVideo && !still) return null;
+  return (
+    <div className={s.nameplate} aria-hidden="true">
+      {useVideo ? (
+        <video
+          className={s.nameplateMedia}
+          src={np.video_url!}
+          poster={still ?? undefined}
+          autoPlay
+          loop
+          muted
+          playsInline
+          // A decorative loop should never grab the media session or controls.
+          disablePictureInPicture
+          tabIndex={-1}
+        />
+      ) : (
+        <img className={s.nameplateMedia} src={still!} alt="" />
+      )}
+    </div>
+  );
+}
+
+/* ---- masthead pieces ------------------------------------------------------ */
+
+function Clock({ offsetMin, tzName }: { offsetMin: number; tzName: string | null }) {
+  const now = useTicker(true);
+  const local = new Date(now + offsetMin * 60000);
+  const hh = String(local.getUTCHours()).padStart(2, "0");
+  const mm = String(local.getUTCMinutes()).padStart(2, "0");
+  const sign = offsetMin >= 0 ? "+" : "-";
+  const oh = String(Math.floor(Math.abs(offsetMin) / 60)).padStart(2, "0");
+  const om = String(Math.abs(offsetMin) % 60).padStart(2, "0");
+  return (
+    <span
+      className={s.chip}
+      title={(tzName ? tzName + " " : "") + "(UTC" + sign + oh + ":" + om + ")"}
+    >
+      <ClockIcon aria-hidden="true" /> {hh}:{mm}
+    </span>
+  );
+}
+
+/* ---- now playing ---------------------------------------------------------- */
+
+/**
+ * `sp` is null when nothing is playing — the panel still renders, with a
+ * placeholder, so the grid keeps a stable shape. `accent` is the "r, g, b"
+ * triplet sampled off the album art; the bar falls back to the theme accent
+ * from CSS when there's nothing to sample.
+ *
+ * The hook runs before the null check so hook order stays constant either way.
+ */
+function NowPlaying({
+  sp,
+  accent,
+  source,
+  t,
+}: {
+  sp: Dict | null;
+  accent: string | null;
+  source?: "doughmination" | "spotify";
+  t: (key: TranslationKey) => string;
+}) {
+  const { lang } = useLanguage();
+
+  const ts = sp?.timestamps as { start?: number; end?: number } | undefined;
+  const start = ts?.start ?? 0;
+  const end = ts?.end ?? 0;
+  const live = !!sp && end > start;
+  const now = useTicker(live);
+
+  const elapsed = live ? clamp(now - start, 0, end - start) : 0;
+  const pct = live ? clamp((elapsed / (end - start)) * 100, 0, 100) : 0;
+
+  if (!sp) {
+    return (
+      <section className={s.panelWide}>
+        <h2 className={s.panelTitle}>{t("presence.nowPlayingTitle")}</h2>
+        <p className={s.empty}>{t("presence.notListening")}</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className={s.panelWide}>
+      <h2 className={s.npTitle_brand}>
+        {source === "doughmination" ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img className={s.brandLogo} src="https://m.doughmination.gay/img/avatars/music.png" alt="" />
+        ) : (
+          <Spotify className={`${s.brandLogo} ${s.brandSpotify}`} aria-hidden="true" />
+        )}
+        {source === "doughmination" ? t("presence.listeningOnDoughminationMusic") : t("presence.listeningToSpotify")}
+      </h2>
+      {/* Points at the site's own /music page rather than out to Spotify.
+          next/link so it routes client-side and the bg-music audio in the
+          persistent layout isn't torn down by a full page load. */}
+      <Link className={s.npRow} href={localizedPath("/music", lang)} onClick={playClickSound}>
+        {sp.album_art_url ? (
+          <SafeImg className={s.npArt} src={String(sp.album_art_url)} alt="" />
+        ) : null}
+        <div className={s.npBody}>
+          <div className={s.npTitle}>{String(sp.song || "")}</div>
+          <div className={s.npArtist}>{String(sp.artist || "")}</div>
+          {sp.album ? <div className={s.npAlbum}>{String(sp.album)}</div> : null}
+          <div className={s.npBar} role="progressbar" aria-valuemin={0} aria-valuemax={100}
+            aria-valuenow={Math.round(pct)} aria-label={t("presence.trackProgress")}>
+            <div
+              className={s.npFill}
+              style={{
+                width: pct + "%",
+                background: accent ? `rgb(${accent})` : undefined
+              }}
+            />
+          </div>
+          <div className={s.npTimes}>
+            <span>{live ? fmt(elapsed) : "0:00"}</span>
+            <span>{live ? fmt(end - start) : "0:00"}</span>
+          </div>
+        </div>
+      </Link>
+    </section>
+  );
+}
+
+/* ---- activities ----------------------------------------------------------- */
+
+function ActivityRow({ a, t }: { a: Dict; t: (key: TranslationKey) => string }) {
+  const isCode = /visual studio code|vscode/i.test((a.name as string) || "");
+  const ts = a.timestamps as { start?: number } | undefined;
+  const start = ts?.start;
+  const now = useTicker(!!start);
+
+  const assets = (a.assets as Dict) || {};
+  const large = assets.large_image && assetUrl(a.application_id as string, assets.large_image as string);
+  const small = assets.small_image && assetUrl(a.application_id as string, assets.small_image as string);
+
+  let kind = isCode ? t("presence.coding") : t("presence.playing").replace("{name}", (a.name as string) || "");
+  const party = a.party as { size?: number[] } | undefined;
+  if (party?.size?.length === 2 && party.size[1]) {
+    kind += " · " + t("presence.partyOf").replace("{a}", String(party.size[0])).replace("{b}", String(party.size[1]));
+  }
+  const buttons = a.buttons as (string | { label?: string })[] | undefined;
+
+  return (
+    <div>
+      <div className={s.actRow}>
+        {large ? (
+          <span className={s.actIcWrap}>
+            <SafeImg className={s.actIc} src={String(large)} alt="" />
+            {small ? (
+              <SafeImg
+                className={s.actIcBadge}
+                src={String(small)}
+                alt=""
+                title={String(assets.small_text || "")}
+              />
+            ) : null}
+          </span>
+        ) : (
+          <span className={s.actDot} aria-hidden="true" />
+        )}
+        <div className={s.actBody}>
+          <div className={s.actKind}>{kind}</div>
+          <div className={s.actTitle}>
+            {(a.details as string) || (isCode ? "" : (a.name as string)) || ""}
+          </div>
+          <div className={s.actSub}>
+            {(a.state as string) || (assets.large_text as string) || ""}
+          </div>
+          {start && now ? <div className={s.actElapsed}>{elapsedStr(start, now)}</div> : null}
+        </div>
+      </div>
+      {buttons?.length ? (
+        <div className={s.actButtons}>
+          {buttons.map((b, i) => (
+            <span className={s.actBtn} key={i}>
+              {typeof b === "string" ? b : b?.label || t("presence.openButton")}
+            </span>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function StreamRow({ a, t }: { a: Dict; t: (key: TranslationKey) => string }) {
+  const url = a.url as string | undefined;
+  const platform = url && /twitch/i.test(url) ? "Twitch" : url && /youtube/i.test(url) ? "YouTube" : t("presence.live");
+  const assets = (a.assets as Dict) || {};
+  const thumb = assets.large_image_url ? proxyImg(assets.large_image_url as string, { w: 240 }) : null;
+  const inner = (
+    <>
+      {thumb ? (
+        <SafeImg className={s.streamThumb} src={thumb} alt="" loading="lazy" referrerPolicy="no-referrer" />
+      ) : (
+        <span className={s.actDot} aria-hidden="true" />
+      )}
+      <div className={s.actBody}>
+        <div className={s.actKind}>{t("presence.streamingOn").replace("{platform}", platform)}</div>
+        <div className={s.actTitle}>{(a.details as string) || (a.name as string) || ""}</div>
+        <div className={s.actSub}>{(a.state as string) || ""}</div>
+      </div>
+    </>
+  );
+  return url ? (
+    <a className={s.actRow} href={url} target="_blank" rel="noopener" onClick={playClickSound}>{inner}</a>
+  ) : (
+    <div className={s.actRow}>{inner}</div>
+  );
+}
+
+/* ---- connections ---------------------------------------------------------- */
+
+function ConnIcon({ type }: { type: string }) {
+  const def = CONNECTION_ICON[String(type || "").toLowerCase()] || { Ic: Globe };
+  if (def.img) {
+    return <SafeImg className={s.connIcon} src={def.img} alt="" title={type} loading="lazy" />;
+  }
+  const Ic = def.Ic ?? Globe;
+  return <Ic className={s.connIcon} title={type} role="img" aria-label={type} />;
+}
+
+/* ---- the dashboard -------------------------------------------------------- */
+
+export default function PresenceDashboard({ userId }: { userId: string }) {
+  const { t } = useLanguage();
+  const json: SelfJson | null = usePresenceFeed(userId);
+  const data = json?.data;
+  const apiUser = (data?.user as Dict) || {};
+
+  const d = useMemo(() => (json ? mapSelfHostToPresence(json, userId) : null), [json, userId]);
+
+  const listening = pickListening(d);
+  const nowPlaying = listening?.s ?? null;
+  const accent = useAlbumAccent(nowPlaying?.album_art_url as string | undefined);
+
+  const bioRaw = apiUser.bio == null ? "" : String(apiUser.bio).trim();
+  // Bios are Discord-flavoured Markdown, not plain text — **bold**, __underline__,
+  // ||spoilers||, > quotes, and \ escapes all have to be interpreted.
+  const bioContent = useMemo(
+    () =>
+      bioRaw
+        ? renderDiscordMarkdown(bioRaw, {
+          emojiUrl,
+          emojiClass: s.bioEmoji,
+          spoilerClass: s.spoiler,
+        })
+        : [],
+    [bioRaw],
+  );
+
+  if (!d) return <div className={s.skeleton} aria-busy="true" aria-label={t("presence.loadingProfile")} />;
+
+  const u = (d.discord_user as Dict) || {};
+  const acts = (d.activities as Dict[]) || [];
+  const status = (d.discord_status as string) || "offline";
+  const isStreaming = acts.some((a) => a.type === 1);
+  const effectiveStatus = isStreaming ? "streaming" : status;
+  const statusKey = isStatusKey(effectiveStatus) ? effectiveStatus : "offline";
+  const statusColour = STATUS_VAR[effectiveStatus] || STATUS_VAR.offline;
+
+  const custom = acts.find((a) => a.type === 4);
+  const hasCustom = !!(custom && (custom.state || (custom.emoji && (custom.emoji as Dict).id)));
+  const games = acts.filter((a) => a.type === 0);
+  const streams = acts.filter((a) => a.type === 1);
+
+  const styles = u.display_name_styles as { colors?: number[]; font_id?: number } | undefined;
+  const gradCols = styles?.colors?.length ? styles.colors.map(intToHex) : null;
+
+  const pg = u.primary_guild as Dict | undefined;
+  const showTag = !!(pg && pg.tag && pg.identity_enabled);
+  const tagBadge = showTag ? guildBadgeUrl(pg!) : null;
+
+  const deco = u.avatar_decoration_data as { asset?: string; url?: string } | undefined;
+  const decoSrc = deco?.url
+    ? deco.url
+    : deco?.asset
+      ? `https://cdn.discordapp.com/avatar-decoration-presets/${deco.asset}.png`
+      : null;
+
+  // Equipped nameplate — rendered as art behind the username, Discord-style.
+  const nameplate = collectibleForSlot(data?.collectibles, "nameplate");
+
+  const banner = bannerUrl((apiUser.id as string) || userId, apiUser.banner as string);
+  const tz = data?.timezone as { utc_offset_minutes?: number; timezone?: string } | undefined;
+  const tzOffsetMin = typeof tz?.utc_offset_minutes === "number" ? tz.utc_offset_minutes : null;
+  const pron = (apiUser.pronouns as string) || (data?.pronoundb as string) || "";
+
+  const prem = apiUser.premium as Dict | undefined;
+  const NITRO_LABEL: Record<string, string> = {
+    nitro: "Nitro",
+    classic: "Nitro Classic",
+    basic: "Nitro Basic",
+  };
+  const nitroLabel = prem ? NITRO_LABEL[prem.type as string] : undefined;
+
+  const doughBadges = Array.isArray(data?.badges) && (data.badges as Dict[]).length
+    ? (data.badges as Dict[])
+    : null;
+  const clientBadges = Array.isArray(data?.clientBadges) ? (data.clientBadges as Dict[]) : [];
+  const flagBadges = BADGE_FLAGS.filter(([bit]) => ((u.public_flags as number) || 0) & bit);
+  const hasBadges = !!(doughBadges?.length || clientBadges.length || flagBadges.length);
+
+  const conns = ((data?.connected_accounts as Dict[]) || []).filter((a) => a && isRealName(a.name));
+  const wishlist = (Array.isArray(data?.wishlist) ? (data.wishlist as Dict[]) : []).filter(Boolean);
+
+  const platformKeys: string[] = [];
+  if (d.active_on_discord_desktop) platformKeys.push("desktop");
+  if (d.active_on_discord_mobile) platformKeys.push("mobile");
+  if (d.active_on_discord_web || d.active_on_discord_embedded) platformKeys.push("web");
+
+  return (
+    <div>
+      <header className={s.masthead}>
+        {banner ? (
+          <SafeImg className={s.banner} src={banner} alt="" referrerPolicy="no-referrer" />
+        ) : (
+          <div className={s.bannerFallback} aria-hidden="true" />
+        )}
+
+        {/* Pinned to the masthead's far bottom-right corner, opposite the name. */}
+        {nameplate ? <Nameplate np={nameplate} /> : null}
+
+        <div className={s.identity}>
+          <div className={s.avatarWrap}>
+            <img
+              className={s.avatar}
+              src={avatarUrl(u as { id?: string; avatar?: string })}
+              alt=""
+              referrerPolicy="no-referrer"
+              crossOrigin="anonymous"
+            />
+            {decoSrc ? <SafeImg className={s.avatarDeco} src={decoSrc} alt="" aria-hidden="true" /> : null}
+            <span
+              className={s.statusPip}
+              style={{ background: statusColour }}
+              title={t(`presence.status.${statusKey}` as TranslationKey)}
+            />
+          </div>
+
+          <div className={s.idBlock}>
+            <div className={`${s.nameRow} ${s.aboveNameplate}`}>
+              <h1
+                className={`${s.name}${gradCols ? " " + s.nameGradient : ""}`}
+                style={{
+                  backgroundImage: gradCols
+                    ? "linear-gradient(90deg, " +
+                    (gradCols.length === 1 ? gradCols[0] + "," + gradCols[0] : gradCols.join(", ")) +
+                    ")"
+                    : undefined,
+                  fontFamily: (styles && NAME_FONTS[styles.font_id as number]) || undefined,
+                }}
+              >
+                {(u.display_name as string) || (u.global_name as string) || (u.username as string) || t("presence.discordUser")}
+              </h1>
+              {showTag ? (
+                <span className={s.guildTag}>
+                  {tagBadge ? <SafeImg className={s.guildTagBadge} src={tagBadge} alt="" /> : null}
+                  {String(pg!.tag)}
+                </span>
+              ) : null}
+            </div>
+
+            <div className={`${s.subRow} ${s.aboveNameplate}`}>
+              {u.username ? <span className={s.handle}>@{String(u.username)}</span> : null}
+              <span className={s.statusText} style={{ color: statusColour }}>
+                <span className={s.statusDot} style={{ background: statusColour }} />
+                {t(`presence.status.${statusKey}` as TranslationKey)}
+              </span>
+              {pron ? <span className={s.chip}>{pron}</span> : null}
+              {tzOffsetMin != null ? (
+                <Clock offsetMin={tzOffsetMin} tzName={tz?.timezone || null} />
+              ) : null}
+              {nitroLabel ? (
+                <span
+                  className={s.chip}
+                  title={nitroLabel + (prem?.since ? " · " + t("presence.since").replace("{date}", fmtSinceDate(prem.since as string)) : "")}
+                >
+                  {nitroLabel}
+                </span>
+              ) : null}
+              {prem?.guild_since ? (
+                <span
+                  className={s.chip}
+                  title={t("presence.boostingSince").replace("{date}", fmtSinceDate(prem.guild_since as string))}
+                  aria-label={t("presence.serverBooster")}
+                >
+                  <Gem aria-hidden="true" />
+                </span>
+              ) : null}
+              {platformKeys.length ? (
+                <span className={s.platforms} aria-hidden="true">
+                  {platformKeys.map((k) => {
+                    const { Ic } = PLATFORM_ICONS[k];
+                    const label = t(`presence.platform.${k}` as TranslationKey);
+                    return <Ic key={k} title={label} role="img" aria-label={label} />;
+                  })}
+                </span>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <div className={s.grid}>
+        <NowPlaying sp={nowPlaying} accent={accent} source={listening?.source} t={t} />
+
+        <section className={s.panel}>
+          <h2 className={s.panelTitle}>{t("presence.statusTitle")}</h2>
+          {hasCustom ? (
+            <div className={s.statusBody}>
+              {(() => {
+                const eu = emojiUrl(custom!.emoji as { id?: string; animated?: boolean });
+                return eu ? <img className={s.customEmoji} src={eu} alt="" /> : null;
+              })()}
+              <span>{String(custom!.state || "")}</span>
+            </div>
+          ) : (
+            <p className={s.empty}>{t("presence.noCustomStatus")}</p>
+          )}
+        </section>
+
+        <section className={s.panel}>
+          <h2 className={s.panelTitle}>{t("presence.aboutTitle")}</h2>
+          {bioRaw ? (
+            <p className={s.bio}>{bioContent}</p>
+          ) : (
+            <p className={s.empty}>{t("presence.noBio")}</p>
+          )}
+        </section>
+
+        <section className={s.panel}>
+          <h2 className={s.panelTitle}>{t("presence.badgesTitle")}</h2>
+          {hasBadges ? (
+            <div className={s.badgeGrid}>
+              {doughBadges?.length
+                ? doughBadges.map((b) => {
+                  const img = (
+                    <SafeImg
+                      className={s.badge}
+                      src={proxyImg("https://cdn.discordapp.com/badge-icons/" + String(b.icon) + ".png")}
+                      alt={String(b.description || b.id)}
+                      title={String(b.description || b.id)}
+                    />
+                  );
+                  return b.link ? (
+                    <a className={s.badgeLink} key={String(b.id)} href={String(b.link)}
+                      target="_blank" rel="noopener" onClick={playClickSound}>{img}</a>
+                  ) : (
+                    <span key={String(b.id)} style={{ lineHeight: 0 }}>{img}</span>
+                  );
+                })
+                : flagBadges.map(([bit, nm, hash]) => (
+                  <SafeImg
+                    key={bit}
+                    className={s.badge}
+                    src={proxyImg("https://cdn.discordapp.com/badge-icons/" + hash + ".png")}
+                    alt={nm}
+                    title={nm}
+                  />
+                ))}
+              {clientBadges.map((b) => (
+                <SafeImg
+                  key={String(b.id)}
+                  className={s.badge}
+                  src={String(b.icon_url)}
+                  alt={String(b.tooltip || "")}
+                  title={String(b.tooltip || "")}
+                  loading="lazy"
+                  referrerPolicy="no-referrer"
+                />
+              ))}
+            </div>
+          ) : (
+            <p className={s.empty}>{t("presence.noBadges")}</p>
+          )}
+        </section>
+
+        <section className={s.panel}>
+          <h2 className={s.panelTitle}>{t("presence.activityTitle")}</h2>
+          {games.length || streams.length ? (
+            <div className={s.actList}>
+              {games.map((a, i) => <ActivityRow a={a} t={t} key={"g" + i} />)}
+              {streams.map((a, i) => <StreamRow a={a} t={t} key={"s" + i} />)}
+            </div>
+          ) : (
+            <p className={s.empty}>{t("presence.noActivity")}</p>
+          )}
+        </section>
+
+        <CollapsiblePanel title={t("presence.connectionsTitle")} count={conns.length}>
+          {conns.length ? (
+            <div className={s.connGrid}>
+              {conns.map((a, i) => {
+                const maker = CONNECTION_URLS[a.type as string];
+                const url = maker ? maker(a.name as string, a.id as string) : null;
+                const inner = (
+                  <>
+                    <ConnIcon type={a.type as string} />
+                    <span className={s.connName}>{String(a.name)}</span>
+                    {a.verified ? (
+                      <span className={s.connCheck} title={t("presence.verified")}>
+                        <PatchCheckFill aria-hidden="true" />
+                      </span>
+                    ) : null}
+                  </>
+                );
+                const key = String(a.type) + ":" + String(a.id ?? a.name) + i;
+                return url ? (
+                  <a className={s.conn} key={key} href={url} target="_blank" rel="noopener" onClick={playClickSound}>{inner}</a>
+                ) : (
+                  <span className={s.conn} key={key}>{inner}</span>
+                );
+              })}
+            </div>
+          ) : (
+            <p className={s.empty}>{t("presence.noConnections")}</p>
+          )}
+        </CollapsiblePanel>
+
+        <CollapsiblePanel title={t("presence.wishlistTitle")} count={wishlist.length} collapseAbove={6}>
+          {wishlist.length ? (
+            <div className={s.wlGrid}>
+              {wishlist.map((w, i) => {
+                const ic = wlImg(w);
+                const wType = String(w.type);
+                const typeLabel = isWlTypeKey(wType) ? t(`presence.wishlistType.${wType}` as TranslationKey) : "";
+                const price = fmtPrice(w.price as Dict);
+                return (
+                  <div className={`${s.wlItem}${w.is_owned ? " " + s.wlOwned : ""}`} key={i}>
+                    {ic ? (
+                      <SafeImg className={s.wlIc} src={ic} alt="" loading="lazy" referrerPolicy="no-referrer" />
+                    ) : null}
+                    <div className={s.wlBody}>
+                      <div className={s.wlName}>{String(w.name || t("presence.wishlist.collectible"))}</div>
+                      {typeLabel ? <div className={s.wlType}>{typeLabel}</div> : null}
+                    </div>
+                    {price ? <span className={s.wlPrice}>{price}</span> : null}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className={s.empty}>{t("presence.noWishlist")}</p>
+          )}
+        </CollapsiblePanel>
+      </div>
+    </div>
+  );
+}

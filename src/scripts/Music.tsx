@@ -1,0 +1,750 @@
+/* personal/src/scripts/Music.tsx
+ * Copyright (c) 2026 Clove Nytrix Doughmination Twilight
+ * Licensed under the DASL-1.0 Licence.
+ * See LICENCE.md in the project root for full licence information.
+ */
+
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useUserPresence } from "@doughmination/react-api";
+import { MusicNoteBeamed } from "react-bootstrap-icons";
+import { playClickSound } from "@lib/sound";
+import { dmListening } from "./presenceShared";
+import { useLanguage } from "@/i18n/LanguageProvider";
+import type { Dictionary } from "@/i18n/locales/en";
+
+/* Ported from music.js — now-playing hero, synced lyrics (LRCLIB) with a
+   follow/lock scroll, recent plays + top artists (Last.fm). The per-frame
+   progress bar and active-lyric highlight stay imperative (refs), which is how
+   React expects animation/scroll sync to be done. */
+
+// ---- config ---------------------------------------------------------------
+const DISCORD_ID = "1464890289922641993";
+const LFM_USER = "Real_AlexTLM";
+const LFM_KEY = "768e8bd0d366f4d6c7874740ca6610ad";
+const LFM_OK = !!(LFM_USER && LFM_KEY);
+const LFM = "https://ws.audioscrobbler.com/2.0/";
+const LFM_PLACEHOLDER = "2a96cbd8b46e442fc41c2b86b821562f";
+const LRCLIB_HOSTS = [
+  "https://lrclib.schuh.wtf",
+  "https://lyrics.lanyard.cafe",
+  "https://lyrics.kie.ac",
+  "https://api.assumi.ng/lyrics",
+  "https://lyrics.aureal.dev",
+  "https://lrclib.net",
+];
+const BLANK_ART =
+  "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+
+// ---- types ----------------------------------------------------------------
+type Track = {
+  song?: string;
+  artist?: string;
+  album?: string;
+  art?: string;
+  trackId?: string;
+  url?: string;
+  start?: number;
+  end?: number;
+  duration: number;
+  live: boolean;
+};
+type Synced = { t: number; text: string };
+type Lyrics = { instrumental: boolean; synced: Synced[]; plain: string };
+type LyricsView =
+  | { kind: "note"; msg: string }
+  | { kind: "loading" }
+  | { kind: "instrumental" }
+  | { kind: "synced"; lines: Synced[] }
+  | { kind: "plain"; lines: string[] };
+type RecentItem = {
+  name: string;
+  artist: string;
+  url: string;
+  art: string;
+  now: boolean;
+  when: string;
+};
+type TopArtist = { name: string; url: string; playcount: string };
+
+// ---- helpers --------------------------------------------------------------
+function mmss(ms: number): string {
+  if (!isFinite(ms) || ms < 0) ms = 0;
+  const s = Math.floor(ms / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+function clamp(n: number, lo: number, hi: number) {
+  return n < lo ? lo : n > hi ? hi : n;
+}
+function trackKey(t: Track | null): string {
+  return t ? [t.song, t.artist, t.album].map((x) => (x || "").toLowerCase()).join("␟") : "";
+}
+function parseLRC(text: string): Synced[] {
+  if (!text) return [];
+  const out: Synced[] = [];
+  const tag = /\[(\d{1,2}):(\d{1,2}(?:[.:]\d{1,3})?)\]/g;
+  text.split(/\r?\n/).forEach((line) => {
+    tag.lastIndex = 0;
+    const stamps: number[] = [];
+    let m: RegExpExecArray | null;
+    let last = 0;
+    while ((m = tag.exec(line))) {
+      const mins = parseInt(m[1], 10);
+      const secs = parseFloat(m[2].replace(":", "."));
+      stamps.push((mins * 60 + secs) * 1000);
+      last = tag.lastIndex;
+    }
+    if (!stamps.length) return;
+    const words = line.slice(last).trim();
+    stamps.forEach((t) => out.push({
+      t,
+      text: words
+    }));
+  });
+  out.sort((a, b) => a.t - b.t);
+  return out;
+}
+function normalizeLyrics(rec: {
+  instrumental?: boolean;
+  syncedLyrics?: string;
+  plainLyrics?: string;
+} | null): Lyrics | null {
+  if (!rec) return null;
+  return {
+    instrumental: !!rec.instrumental,
+    synced: parseLRC(rec.syncedLyrics || ""),
+    plain: rec.plainLyrics || "",
+  };
+}
+function lyricsView(data: Lyrics | null, noLyricsMsg: string): LyricsView {
+  if (!data) return {
+    kind: "note",
+    msg: noLyricsMsg
+  };
+  if (data.instrumental) return { kind: "instrumental" };
+  if (data.synced.length) return {
+    kind: "synced",
+    lines: data.synced
+  };
+  if (data.plain) return {
+    kind: "plain",
+    lines: data.plain.split(/\r?\n/)
+  };
+  return {
+    kind: "note",
+    msg: noLyricsMsg
+  };
+}
+
+// ---- LRCLIB ---------------------------------------------------------------
+async function lrclibGet(params: Record<string, string>) {
+  const qs = new URLSearchParams(params).toString();
+  for (const host of LRCLIB_HOSTS) {
+    try {
+      const res = await fetch(`${host}/api/get?${qs}`, {
+        headers: { "X-User-Agent": "doughmination.gay music (https://doughmination.gay)" },
+      });
+      if (res.ok) return res.json();
+    } catch {
+      /* try next mirror */
+    }
+  }
+  return null;
+}
+async function lrclibSearch(track_name: string, artist_name: string) {
+  const qs = new URLSearchParams({
+    track_name,
+    artist_name
+  }).toString();
+  for (const host of LRCLIB_HOSTS) {
+    try {
+      const res = await fetch(`${host}/api/search?${qs}`);
+      if (!res.ok) continue;
+      const arr = await res.json();
+      if (!Array.isArray(arr) || !arr.length) continue;
+      return arr.find((r) => r.syncedLyrics) || arr.find((r) => r.plainLyrics) || arr[0];
+    } catch {
+      /* next */
+    }
+  }
+  return null;
+}
+
+// ---- Last.fm --------------------------------------------------------------
+function lfmImg(images: { "#text"?: string }[]): string {
+  if (!Array.isArray(images)) return "";
+  const big = images[images.length - 1] || images[0] || {};
+  const url = big["#text"] || "";
+  return url && url.indexOf(LFM_PLACEHOLDER) === -1 ? url : "";
+}
+function timeAgo(uts: number | string, strings: Dictionary["music"]): string {
+  const diff = Math.floor(Date.now() / 1000) - Number(uts);
+  if (!isFinite(diff) || diff < 0) return "";
+  if (diff < 60) return strings.timeJustNow;
+  if (diff < 3600) return strings.timeMinAgo.replace("{n}", String(Math.floor(diff / 60)));
+  if (diff < 86400) return strings.timeHrAgo.replace("{n}", String(Math.floor(diff / 3600)));
+  const days = Math.floor(diff / 86400);
+  return (days < 2 ? strings.timeDayAgo : strings.timeDaysAgo).replace("{n}", String(days));
+}
+async function lfm(method: string, extra?: Record<string, string>) {
+  const qs = new URLSearchParams({
+    method,
+    user: LFM_USER,
+    api_key: LFM_KEY,
+    format: "json",
+    ...(extra || {}),
+  }).toString();
+  const res = await fetch(`${LFM}?${qs}`);
+  if (!res.ok) throw new Error(`last.fm ${res.status}`);
+  return res.json();
+}
+
+// ---- artist images (TheAudioDB) --------------------------------------------
+const TADB_ROOT = "https://www.theaudiodb.com/api/v1/json/123";
+const ART_CACHE_PREFIX = "dough:artimg:";
+const ART_TTL_HIT = 30 * 864e5;
+const ART_TTL_MISS = 3 * 864e5;
+
+async function tadbArtistImg(name: string): Promise<string> {
+  try {
+    const res = await fetch(`${TADB_ROOT}/search.php?s=${encodeURIComponent(name)}`);
+    if (!res.ok) return "";
+    const data = await res.json();
+    const a = data?.artists?.[0];
+    return a?.strArtistThumb || "";
+  } catch {
+    return "";
+  }
+}
+function artCacheGet(name: string): string | undefined {
+  try {
+    const raw = window.localStorage.getItem(ART_CACHE_PREFIX + name.toLowerCase());
+    if (!raw) return undefined;
+    const hit = JSON.parse(raw);
+    const ttl = hit.url ? ART_TTL_HIT : ART_TTL_MISS;
+    if (Date.now() - hit.ts > ttl) return undefined;
+    return hit.url || "";
+  } catch {
+    return undefined;
+  }
+}
+function artCacheSet(name: string, url: string) {
+  try {
+    window.localStorage.setItem(
+      ART_CACHE_PREFIX + name.toLowerCase(),
+      JSON.stringify({
+        url: url || "",
+        ts: Date.now()
+      }),
+    );
+  } catch {
+    /* skip */
+  }
+}
+async function artistImg(name: string): Promise<string> {
+  if (!name) return "";
+  const cached = artCacheGet(name);
+  if (cached !== undefined) return cached;
+  const url = await tadbArtistImg(name);
+  artCacheSet(name, url);
+  return url;
+}
+
+// ===========================================================================
+export default function Music() {
+  const { t, dict } = useLanguage();
+  const [track, setTrack] = useState<Track | null>(null);
+  const [ly, setLy] = useState<LyricsView>({
+    kind: "note",
+    msg: dict.music.waitingForTrack
+  });
+  const [locked, setLocked] = useState(true);
+  const [recent, setRecent] = useState<RecentItem[] | { note: string } | null>(null);
+  const [top, setTop] = useState<TopArtist[] | null>(null);
+  const [topImg, setTopImg] = useState<Record<string, string>>({});
+
+  // refs used by the imperative ticker so it needn't re-subscribe each frame
+  const trackRef = useRef<Track | null>(null);
+  const lyRef = useRef<LyricsView>(ly);
+  const lockedRef = useRef(true);
+  const activeLineRef = useRef(-1);
+  const selfScrollRef = useRef(false);
+  const lyricsBoxRef = useRef<HTMLDivElement | null>(null);
+  const fillRef = useRef<HTMLSpanElement | null>(null);
+  const curRef = useRef<HTMLSpanElement | null>(null);
+  const lyricsReqRef = useRef(0);
+  const lyricsCache = useRef(new Map<string, Lyrics | null>());
+  const reduceMotion = useRef(false);
+
+  const centerLine = useCallback((i: number, smooth: boolean) => {
+    const box = lyricsBoxRef.current;
+    const el = box?.children[i] as HTMLElement | undefined;
+    if (!box || !el) return;
+    const top = el.offsetTop - box.clientHeight / 2 + el.clientHeight / 2;
+    selfScrollRef.current = true;
+    box.scrollTo({
+      top,
+      behavior: smooth && !reduceMotion.current ? "smooth" : "auto"
+    });
+    setTimeout(() => (selfScrollRef.current = false), smooth && !reduceMotion.current ? 600 : 50);
+  }, []);
+
+  // ---- lyrics loading ----
+  const loadLyrics = useCallback(async (t: Track | null) => {
+    const myReq = ++lyricsReqRef.current;
+    activeLineRef.current = -1;
+    setLocked(true);
+    if (!t) {
+      setLy({
+        kind: "note",
+        msg: dict.music.noTrackPlaying
+      });
+      return;
+    }
+    const key = trackKey(t);
+    if (lyricsCache.current.has(key)) {
+      setLy(lyricsView(lyricsCache.current.get(key) || null, dict.music.noLyricsFound));
+      return;
+    }
+    setLy({ kind: "loading" });
+    let rec = null;
+    try {
+      if (t.live && t.duration) {
+        rec = await lrclibGet({
+          track_name: t.song || "",
+          artist_name: t.artist || "",
+          album_name: t.album || "",
+          duration: String(Math.round(t.duration / 1000)),
+        });
+      }
+      if (!rec) rec = await lrclibSearch(t.song || "", t.artist || "");
+    } catch {
+      rec = null;
+    }
+    if (myReq !== lyricsReqRef.current) return;
+    const data = normalizeLyrics(rec);
+    lyricsCache.current.set(key, data);
+    setLy(lyricsView(data, dict.music.noLyricsFound));
+  }, [dict]);
+
+  const applyTrack = useCallback(
+    (next: Track | null) => {
+      const changed = trackKey(next) !== trackKey(trackRef.current);
+      trackRef.current = next;
+      setTrack(next);
+      if (changed) {
+        activeLineRef.current = -1;
+        loadLyrics(next);
+      }
+    },
+    [loadLyrics],
+  );
+
+  // ---- idle fallback: last scrobble as the headline ----
+  const showIdle = useCallback(async () => {
+    if (!LFM_OK) return;
+    try {
+      const data = await lfm("user.getrecenttracks", { limit: "1" });
+      if (trackRef.current?.live) return;
+      const t = data?.recenttracks?.track;
+      const last = Array.isArray(t) ? t[0] : t;
+      if (last) {
+        applyTrack({
+          song: last.name,
+          artist: last.artist?.["#text"] || last.artist?.name,
+          album: last.album?.["#text"],
+          art: lfmImg(last.image),
+          url: last.url || "",
+          duration: 0,
+          live: false,
+        });
+      }
+    } catch {
+      /* leave hero idle */
+    }
+  }, [applyTrack]);
+
+  const onPresence = useCallback(
+    (
+      d: {
+        activities?: unknown;
+        listening_to_spotify?: boolean;
+        spotify?: Record<string, unknown>;
+      } | null,
+    ) => {
+      // Prefer the self-hosted Doughmination Music player; fall back to Spotify.
+      const dm = dmListening(d?.activities);
+      const sp = d?.listening_to_spotify && d.spotify ? d.spotify : null;
+      const src = (dm ?? sp) as
+        | {
+          song?: string;
+          artist?: string;
+          album?: string;
+          album_art_url?: string;
+          track_id?: string | null;
+          timestamps?: { start?: number | null; end?: number | null };
+        }
+        | null;
+      if (src) {
+        const start = src.timestamps?.start ?? undefined;
+        const end = src.timestamps?.end ?? undefined;
+        applyTrack({
+          song: src.song,
+          artist: src.artist,
+          album: src.album,
+          art: src.album_art_url || "",
+          trackId: src.track_id || "",
+          url: src.track_id ? `https://open.spotify.com/track/${src.track_id}` : "",
+          start: start ?? undefined,
+          end: end ?? undefined,
+          duration: start && end ? end - start : 0,
+          live: true,
+        });
+      } else if (trackRef.current?.live) {
+        trackRef.current = null;
+        setTrack(null);
+        showIdle();
+      } else if (!trackRef.current) {
+        showIdle();
+      }
+    },
+    [applyTrack, showIdle],
+  );
+
+  // ---- recent + top ----
+  const loadRecent = useCallback(async () => {
+    if (!LFM_OK) {
+      setRecent({ note: dict.music.addLastfmNote });
+      return;
+    }
+    try {
+      const data = await lfm("user.getrecenttracks", { limit: "12" });
+      const arr = data?.recenttracks?.track || [];
+      const list = Array.isArray(arr) ? arr : [arr];
+      if (!list.length) {
+        setRecent({ note: dict.music.noRecentScrobbles });
+        return;
+      }
+      setRecent(
+        list.map((t): RecentItem => {
+          const now = t["@attr"]?.nowplaying === "true";
+          return {
+            name: t.name,
+            artist: t.artist?.["#text"] || t.artist?.name || "",
+            url: t.url || "#",
+            art: lfmImg(t.image),
+            now,
+            when: now ? "" : timeAgo(t.date?.uts, dict.music),
+          };
+        }),
+      );
+    } catch {
+      setRecent({ note: dict.music.lastfmUnreachable });
+    }
+  }, [dict]);
+
+  const loadTop = useCallback(async () => {
+    if (!LFM_OK) return;
+    try {
+      const data = await lfm("user.gettopartists", {
+        period: "7day",
+        limit: "8"
+      });
+      const arr = data?.topartists?.artist || [];
+      if (!arr.length) return;
+      const list: TopArtist[] = arr.map((a: { name: string; url: string; playcount: string }) => ({
+        name: a.name,
+        url: a.url,
+        playcount: a.playcount,
+      }));
+      setTop(list);
+      list.forEach((a) => {
+        artistImg(a.name).then((url) => {
+          if (url) setTopImg((m) => ({
+            ...m,
+            [a.name]: url
+          }));
+        });
+      });
+    } catch {
+      /* leave top hidden */
+    }
+  }, []);
+
+  // ---- effects ----
+  useEffect(() => {
+    reduceMotion.current = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  }, []);
+
+  // keep the latest values available to the imperative ticker / handlers
+  useEffect(() => {
+    trackRef.current = track;
+    lyRef.current = ly;
+    lockedRef.current = locked;
+  }, [track, ly, locked]);
+
+  // presence: live over the shared socket (was window.DM / poll fallback).
+  const livePresence = useUserPresence(DISCORD_ID);
+  useEffect(() => {
+    onPresence(
+      livePresence
+        ? {
+          activities: livePresence.activities,
+          listening_to_spotify: livePresence.listening_to_spotify,
+          spotify: livePresence.spotify
+            ? Object.fromEntries(Object.entries(livePresence.spotify))
+            : undefined,
+        }
+        : null,
+    );
+  }, [livePresence, onPresence]);
+
+  // boot: idle headline + recent + top; recent refresh
+  useEffect(() => {
+    void (async () => {
+      await showIdle();
+      await loadRecent();
+      await loadTop();
+    })();
+    const t = LFM_OK ? setInterval(loadRecent, 45000) : undefined;
+    return () => {
+      if (t) clearInterval(t);
+    };
+  }, [showIdle, loadRecent, loadTop]);
+
+  // per-frame ticker: progress bar + active synced line + follow-scroll
+  useEffect(() => {
+    let raf = 0;
+    const tick = () => {
+      const t = trackRef.current;
+      const box = lyricsBoxRef.current;
+      if (t && t.live && t.start && t.end) {
+        const pos = clamp(Date.now() - t.start, 0, t.duration);
+        if (fillRef.current) fillRef.current.style.width = `${(pos / t.duration) * 100}%`;
+        if (curRef.current) curRef.current.textContent = mmss(pos);
+        const view = lyRef.current;
+        if (view.kind === "synced" && box) {
+          let i = -1;
+          for (let k = 0; k < view.lines.length; k++) {
+            if (view.lines[k].t <= pos) i = k;
+            else break;
+          }
+          if (i !== activeLineRef.current) {
+            const kids = box.children;
+            const prev = activeLineRef.current;
+            if (prev >= 0 && kids[prev]) kids[prev].classList.remove("is-active");
+            activeLineRef.current = i;
+            if (kids[i]) {
+              kids[i].classList.add("is-active");
+              if (lockedRef.current) centerLine(i, true);
+            }
+          }
+        }
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [centerLine]);
+
+  // user scroll releases the lock (programmatic scrolls don't)
+  const onUserScroll = () => {
+    if (!selfScrollRef.current && lockedRef.current) setLocked(false);
+  };
+
+  const syncedAvailable = ly.kind === "synced";
+
+  return (
+    <main className={`music-wrap${track ? (track.live ? " is-live" : "") : " is-idle"}`} id="music">
+      <header className="music-head">
+        <h1>{t("music.title")}</h1>
+        <p>{t("music.subtitle")}</p>
+      </header>
+
+      {/* now playing */}
+      <a
+        className="mdc"
+        id="dc-link"
+        onClick={playClickSound}
+        {...(track?.url ? {
+          href: track.url,
+          target: "_blank",
+          rel: "noopener"
+        } : {})}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          className={`mdc-art${track?.art ? " has-art" : ""}`}
+          id="dc-art"
+          alt=""
+          src={track?.art || BLANK_ART}
+        />
+        <div className="mdc-meta">
+          <span className="mdc-state" id="dc-state">
+            {track ? (track.live ? t("music.listeningNow") : t("music.lastPlayed")) : t("music.notListening")}
+          </span>
+          <span className="mdc-title" id="dc-title">
+            {track ? track.song || t("music.unknownTrack") : "—"}
+          </span>
+          <span className="mdc-artist" id="dc-artist">
+            {track?.artist || ""}
+          </span>
+          <span className="mdc-album" id="dc-album">
+            {track?.album || ""}
+          </span>
+          <div
+            className="mdc-progress"
+            id="dc-progress"
+            hidden={!(track?.live && track.start && track.end)}
+          >
+            <span className="mdc-time" id="dc-cur" ref={curRef}>
+              0:00
+            </span>
+            <span className="mdc-bar">
+              <span className="mdc-fill" id="dc-fill" ref={fillRef} />
+            </span>
+            <span className="mdc-time" id="dc-dur">
+              {track ? mmss(track.duration) : "0:00"}
+            </span>
+          </div>
+        </div>
+      </a>
+
+      {/* lyrics */}
+      <div className="sec-row" id="lyrics-section">
+        <h2 className="sec-title">{t("music.lyricsHeading")}</h2>
+        <button
+          className={`ly-lock${locked ? " is-locked" : ""}`}
+          id="ly-lock"
+          type="button"
+          aria-pressed={locked}
+          hidden={!syncedAvailable}
+          onClick={() => {
+            playClickSound();
+            if (locked) setLocked(false);
+            else {
+              setLocked(true);
+              if (activeLineRef.current >= 0) centerLine(activeLineRef.current, true);
+            }
+          }}
+        >
+          <span className="ly-bars" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+            <i />
+          </span>
+          <span className="ly-lock-label">{locked ? t("music.synced") : t("music.sync")}</span>
+        </button>
+      </div>
+      <div
+        className={`lyrics ${ly.kind === "loading"
+          ? "is-loading"
+          : ly.kind === "instrumental"
+            ? "is-instrumental"
+            : ly.kind === "synced"
+              ? "is-synced"
+              : ly.kind === "plain"
+                ? "is-plain"
+                : "is-empty"
+          }`}
+        id="lyrics"
+        ref={lyricsBoxRef}
+        onWheel={onUserScroll}
+        onTouchMove={onUserScroll}
+        onKeyDown={(e) => {
+          if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(e.key))
+            onUserScroll();
+        }}
+      >
+        {ly.kind === "loading" ? (
+          <p className="ly-note">{t("music.findingLyrics")}</p>
+        ) : ly.kind === "note" ? (
+          <p className="ly-note">{ly.msg}</p>
+        ) : ly.kind === "instrumental" ? (
+          <p className="ly-note">
+            <MusicNoteBeamed aria-hidden="true" /> {t("music.instrumental")}{" "}
+            <MusicNoteBeamed aria-hidden="true" />
+          </p>
+        ) : ly.kind === "synced" ? (
+          ly.lines.map((l, i) => (
+            <p className="ly-line" data-i={i} key={i}>
+              {l.text || " "}
+            </p>
+          ))
+        ) : (
+          ly.lines.map((l, i) => (
+            <p className="ly-line ly-static" key={i}>
+              {l || " "}
+            </p>
+          ))
+        )}
+      </div>
+
+      {/* recently played */}
+      <h2 className="sec-title" id="recently-played">
+        {t("music.recentlyPlayed")}
+      </h2>
+      <ul className="recent" id="recent">
+        {recent === null ? null : "note" in recent ? (
+          <li className="rc-note">{recent.note}</li>
+        ) : (
+          recent.map((t, i) => (
+            <li className={`rc-item${t.now ? " is-now" : ""}`} key={i}>
+              <a href={t.url} target="_blank" rel="noopener" onClick={playClickSound}>
+                {t.art ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img className="rc-art" src={t.art} alt="" loading="lazy" />
+                ) : (
+                  <span className="rc-art rc-art-blank" aria-hidden="true">
+                    <MusicNoteBeamed />
+                  </span>
+                )}
+                <span className="rc-text">
+                  <span className="rc-name">{t.name}</span>
+                  <span className="rc-artist">{t.artist}</span>
+                </span>
+                {t.now ? (
+                  <span className="rc-now">{dict.music.scrobblingNow}</span>
+                ) : (
+                  <span className="rc-when">{t.when}</span>
+                )}
+              </a>
+            </li>
+          ))
+        )}
+      </ul>
+
+      {/* top artists */}
+      <div id="top" hidden={!top}>
+        {top ? (
+          <>
+            <h2 className="sec-title">{t("music.topArtistsHeading")}</h2>
+            <ol className="top-chips">
+              {top.map((a, i) => (
+                <li className="top-chip" key={a.name + i}>
+                  <a href={a.url} target="_blank" rel="noopener" onClick={playClickSound}>
+                    <span className="top-rank">{i + 1}</span>
+                    {topImg[a.name] ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img className="top-art" src={topImg[a.name]} alt="" referrerPolicy="no-referrer" />
+                    ) : (
+                      <span className="top-art top-art-blank" aria-hidden="true">
+                        <MusicNoteBeamed />
+                      </span>
+                    )}
+                    <span className="top-text">
+                      <span className="top-name">{a.name}</span>
+                      <span className="top-plays">{dict.music.plays.replace("{n}", a.playcount)}</span>
+                    </span>
+                  </a>
+                </li>
+              ))}
+            </ol>
+          </>
+        ) : null}
+      </div>
+    </main>
+  );
+}

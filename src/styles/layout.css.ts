@@ -1,0 +1,80 @@
+/* personal/src/styles/layout.css.ts
+ * Copyright (c) 2026 Clove Nytrix Doughmination Twilight
+ * Licensed under the DASL-1.0 Licence.
+ * See LICENCE.md in the project root for full licence information.
+ */
+
+/**
+ * layout.css.ts — the shared .hub / .pfp / .hub-header chrome at the top of
+ * most pages.
+ *
+ * Ported from public/css/shared/layout.css. All six rules were live.
+ *
+ * globalStyle rather than style(): this markup is written by hand across many
+ * page components (app/page.tsx, 88x31, selfies, dev-info, …) rather than owned
+ * by a single one, so the class names must stay literal.
+ */
+import { globalStyle, keyframes } from "@vanilla-extract/css";
+import { vars } from "./themes.css";
+
+// Shared trans-flag gradient title, uniform across every site.
+const transSlide = keyframes({
+  to: { backgroundPositionX: "200%" },
+});
+
+globalStyle(".hub", {
+  position: "relative",
+  zIndex: 1,
+  width: "100%",
+  maxWidth: 460,
+});
+
+globalStyle(".pfp", {
+  width: 96,
+  height: 96,
+  borderRadius: "50%",
+  objectFit: "cover",
+  border: `3px solid ${vars.warning}`,
+  boxShadow: "0 4px 18px rgba(245, 194, 231, 0.25)",
+  marginBottom: "0.75rem",
+});
+
+globalStyle(".hub-header", {
+  textAlign: "center",
+  marginBottom: "2.25rem",
+});
+
+globalStyle(".hub-header h1", {
+  margin: 0,
+  fontSize: "2rem",
+  fontWeight: 700,
+  letterSpacing: "-0.02em",
+  backgroundImage:
+    "linear-gradient(90deg, #5BCEFA, #F5A9B8, #ffffff, #F5A9B8, #5BCEFA, #5BCEFA)",
+  backgroundSize: "200% 100%",
+  WebkitBackgroundClip: "text",
+  backgroundClip: "text",
+  color: "transparent",
+  animation: `${transSlide} 6s linear infinite`,
+  "@media": {
+    "(prefers-reduced-motion: reduce)": {
+      animation: "none",
+    },
+  },
+});
+
+globalStyle(".tagline", {
+  margin: "0.35rem 0 0",
+  color: vars.textMuted,
+  fontSize: "0.95rem",
+  letterSpacing: "0.04em",
+  textTransform: "uppercase",
+});
+
+globalStyle(".pronouns", {
+  margin: "0.35rem 0 0",
+  color: vars.accentAlt,
+  fontSize: "0.95rem",
+  letterSpacing: "0.04em",
+  textTransform: "lowercase",
+});

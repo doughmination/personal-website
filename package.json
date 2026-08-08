@@ -1,0 +1,44 @@
+{
+  "name": "personal",
+  "version": "1.5.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --turbo",
+    "dev:webpack": "next dev --webpack",
+    "build": "next build --turbo",
+    "build:webpack": "next build --webpack",
+    "start": "next start",
+    "lint": "eslint"
+  },
+  "dependencies": {
+    "@doughmination/react-api": "^1.6.0",
+    "@google/model-viewer": "^4.3.1",
+    "@tanstack/react-query": "^5.101.4",
+    "leaflet": "^1.9.4",
+    "next": "16.2.12",
+    "react": "19.2.8",
+    "react-bootstrap-icons": "^1.11.6",
+    "react-dom": "19.2.8",
+    "react-leaflet": "^5.0.0",
+    "skinview3d": "^3.4.2"
+  },
+  "devDependencies": {
+    "@types/leaflet": "^1.9.22",
+    "@types/node": "^26.1.2",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vanilla-extract/css": "^1.21.2",
+    "@vanilla-extract/next-plugin": "^2.5.2",
+    "typescript": "^6.0.3"
+  },
+  "ignoreScripts": [
+    "sharp",
+    "unrs-resolver"
+  ],
+  "trustedDependencies": [
+    "@swc/core",
+    "esbuild",
+    "sharp",
+    "unrs-resolver"
+  ]
+}
