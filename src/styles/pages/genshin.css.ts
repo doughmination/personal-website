@@ -191,3 +191,19 @@ globalStyle(".genshin-meta .credit", {
   margin: 0,
   lineHeight: 1.4,
 });
+
+globalStyle(".genshin-no-model", {
+  position: "absolute",
+  inset: 0,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+});
+
+globalStyle(".genshin-no-model img", {
+  width: "55%",
+  maxWidth: 256,
+  aspectRatio: "1 / 1",
+  objectFit: "contain",
+  imageRendering: "auto",
+});

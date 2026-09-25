@@ -10,14 +10,36 @@ import { useGenshinRoster } from "doughmination-api";
 import Model3D from "@components/chrome/model3D";
 import { useLanguage } from "@/i18n/languageProvider";
 
+type Tier = "owned" | "want";
+
 export type Character = {
   name: string;
-  model: string;
-  avatarId?: string;
-  tier: "owned" | "want";
+  tier?: Tier;
+  level?: number;
+  modelSlug?: string;
+  noModel?: boolean;
+};
+
+type ResolvedCharacter = {
+  name: string;
+  model: string | null;
+  icon?: string;
+  tier: Tier;
   level?: number;
   tracked?: boolean;
 };
+
+const MODEL_BASE_URL = "https://m.doughmination.gay/models";
+
+// "Hu Tao" -> "hutao"
+function toModelSlug(name: string) {
+  return name.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function modelUrl(character: Character) {
+  const slug = character.modelSlug ?? toModelSlug(character.name);
+  return `${MODEL_BASE_URL}/${slug}.glb`;
+}
 
 const ASCENSION_CAPS = [20, 40, 50, 60, 70, 80, 90] as const;
 const MAX_LEVEL = 90;
@@ -43,8 +65,12 @@ function ascensionProgress(level: number) {
   };
 }
 
-const TIER_ORDER: Record<Character["tier"], number> = { want: 0, owned: 1 };
-function orderCharacters(characters: Character[]): Character[] {
+const TIER_ORDER: Record<Tier, number> = {
+  want: 0,
+  owned: 1,
+};
+
+function orderCharacters(characters: ResolvedCharacter[]): ResolvedCharacter[] {
   return [...characters].sort((a, b) => {
     if (TIER_ORDER[a.tier] !== TIER_ORDER[b.tier]) {
       return TIER_ORDER[a.tier] - TIER_ORDER[b.tier];
@@ -66,15 +92,25 @@ export default function GenshinGallery({
   const { t } = useLanguage();
   const { data: roster } = useGenshinRoster(uid);
 
-  const merged = characters.map((c): Character => {
-    if (!c.avatarId || !roster) return c;
-    const live = roster.characters.find((r) => r.id === c.avatarId);
-    if (!live) return c;
+  // The roster only knows showcased characters, so it can add levels but never downgrade to "want"
+  const merged = characters.map((c): ResolvedCharacter => {
+    const live = roster?.characters.find((r) => r.name === c.name);
+
+    const base: ResolvedCharacter = {
+      name: c.name,
+      model: c.noModel ? null : modelUrl(c),
+      icon: live?.icon_url,
+      tier: c.tier ?? "owned",
+      level: c.level,
+    };
+
+    if (!live?.owned) return base;
+
     return {
-      ...c,
-      tier: live.owned ? "owned" : "want",
-      level: live.owned ? live.level ?? undefined : undefined,
-      tracked: live.owned ? live.tracked : undefined,
+      ...base,
+      tier: "owned",
+      level: live.level ?? base.level,
+      tracked: live.tracked,
     };
   });
   const ordered = orderCharacters(merged);
@@ -110,11 +146,25 @@ export default function GenshinGallery({
                     {t(c.tier === "owned" ? "genshin.owned" : "genshin.want")}
                   </span>
                 )}
-                <Model3D
-                  src={c.model}
-                  poster="https://m.doughmination.gay/img/avatars/favicon.png"
-                  alt={t("genshin.modelAlt").replace("{name}", c.name)}
-                />
+                {c.model ? (
+                  <Model3D
+                    src={c.model}
+                    autoRotate={false}
+                    alt={t("genshin.modelAlt").replace("{name}", c.name)}
+                  />
+                ) : (
+                  <div className="genshin-no-model">
+                    {c.icon && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={c.icon}
+                        alt=""
+                        loading="lazy"
+                        decoding="async"
+                      />
+                    )}
+                  </div>
+                )}
               </div>
               <div className="genshin-meta">
                 <h2>{c.name}</h2>

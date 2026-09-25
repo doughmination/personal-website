@@ -6,10 +6,26 @@
 
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 
+// Unused models model-viewer keeps in memory after a viewer unmounts
+const MODEL_CACHE_SIZE = 2;
+
+// How far off-screen a viewer mounts early, so it is ready on arrival
+const VISIBILITY_MARGIN = "300px 0px";
+
 let mvPromise: Promise<void> | null = null;
+
+function configureModelViewer() {
+  const ModelViewer = customElements.get("model-viewer") as
+    | (CustomElementConstructor & { modelCacheSize?: number })
+    | undefined;
+
+  if (ModelViewer) {
+    ModelViewer.modelCacheSize = MODEL_CACHE_SIZE;
+  }
+}
 
 function loadModelViewer(): Promise<void> {
   if (typeof window !== "undefined" && customElements.get("model-viewer")) {
@@ -17,7 +33,7 @@ function loadModelViewer(): Promise<void> {
   }
   if (!mvPromise) {
     mvPromise = import("@google/model-viewer/dist/model-viewer.min.js")
-      .then(() => undefined)
+      .then(() => configureModelViewer())
       .catch(() => {
         mvPromise = null;
       });
@@ -48,14 +64,30 @@ export default function Model3D({
   className,
   style,
 }: Model3DProps) {
-  const ref = useRef<HTMLElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const viewerRef = useRef<HTMLElement>(null);
+  const [isOnScreen, setIsOnScreen] = useState(false);
 
+  // Only keep a live viewer while near the viewport; unmounting frees its GPU memory
   useEffect(() => {
-    loadModelViewer();
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => setIsOnScreen(entry.isIntersecting),
+      { rootMargin: VISIBILITY_MARGIN },
+    );
+
+    observer.observe(wrapper);
+    return () => observer.disconnect();
   }, []);
 
   useEffect(() => {
-    const el = ref.current;
+    if (isOnScreen) loadModelViewer();
+  }, [isOnScreen]);
+
+  useEffect(() => {
+    const el = viewerRef.current;
     if (!el) return;
     el.setAttribute("src", src);
     if (poster) el.setAttribute("poster", poster);
@@ -64,6 +96,7 @@ export default function Model3D({
     el.setAttribute("reveal", "auto");
     el.setAttribute("shadow-intensity", "1");
     el.setAttribute("exposure", "1");
+    el.setAttribute("interaction-prompt", "none");
     if (autoRotate) el.setAttribute("auto-rotate", "");
     else el.removeAttribute("auto-rotate");
     if (interactive) el.setAttribute("camera-controls", "");
@@ -73,22 +106,35 @@ export default function Model3D({
       el.setAttribute("min-camera-orbit", cameraOrbit);
       el.setAttribute("max-camera-orbit", cameraOrbit);
     }
-  }, [src, poster, alt, autoRotate, interactive, loading, cameraOrbit]);
+  }, [isOnScreen, src, poster, alt, autoRotate, interactive, loading, cameraOrbit]);
 
   const Tag = "model-viewer" as unknown as React.ElementType;
 
+  const sizing: CSSProperties = {
+    width: "100%",
+    height: "100%",
+    minHeight: "20rem",
+    display: "block",
+  };
+
   return (
-    <Tag
-      ref={ref}
+    <div
+      ref={wrapperRef}
       className={className}
       style={{
-        width: "100%",
-        height: "100%",
-        minHeight: "20rem",
-        display: "block",
-        "--poster-color": "transparent",
+        ...sizing,
         ...style,
       }}
-    />
+    >
+      {isOnScreen && (
+        <Tag
+          ref={viewerRef}
+          style={{
+            ...sizing,
+            "--poster-color": "transparent",
+          }}
+        />
+      )}
+    </div>
   );
 }
